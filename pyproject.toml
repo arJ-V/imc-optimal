@@ -41,12 +41,6 @@ Changelog = "https://github.com/arJ-V/imc-optimal/releases"
 [tool.setuptools.packages.find]
 include = ["prosperity3opt", "prosperity3opt.*"]
 
-[tool.uv.dependency-groups]
-dev = [
-    "mypy>=1.15.0",
-    "ruff>=0.9.9",
-]
-
 [tool.ruff]
 line-length = 120
 
