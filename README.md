@@ -1,4 +1,6 @@
 # IMC Prosperity 3 Optimizer
+[![Publish to PyPI](https://github.com/arJ-V/imc-optimal/actions/workflows/publish.yml/badge.svg)](https://github.com/arJ-V/imc-optimal/actions/workflows/publish.yml)
+[![CI](https://github.com/arJ-V/imc-optimal/actions/workflows/ci.yml/badge.svg)](https://github.com/arJ-V/imc-optimal/actions/workflows/ci.yml)
 
 Hyperparameter optimizer for [IMC Prosperity 3](https://prosperity.imc.com/) algorithms with multi-objective optimization support.
 
