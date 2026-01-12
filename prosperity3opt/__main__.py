@@ -125,7 +125,7 @@ def cli(
         finally:
             try:
                 if multi_objective:
-                    print(f"\nOptimization complete!")
+                    print("\nOptimization complete!")
                     print(f"Total trials: {len(study.trials)}")
                     print(f"\nPareto front contains {len(study.best_trials)} solutions")
                     print("\nTop Pareto front solutions:")

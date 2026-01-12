@@ -8,7 +8,7 @@ import tempfile
 from contextlib import contextmanager
 from multiprocessing import Lock
 from pathlib import Path
-from typing import Callable, Generator, Optional, Tuple
+from typing import Callable, Generator, Tuple
 
 from optuna import Trial, TrialPruned
 from optuna.distributions import CategoricalChoiceType
