@@ -2,7 +2,7 @@
 
 Hyperparameter optimizer for [IMC Prosperity 3](https://prosperity.imc.com/) algorithms with multi-objective optimization support.
 
-> **Note**: This project is based on the original [imc-prosperity-3-optimizer](https://github.com/jmerle/imc-prosperity-3-optimizer) by [Jasper van Merle (jmerle)](https://github.com/jmerle). The original project provided the foundation for this enhanced version with multi-objective optimization, additional metrics, and post-optimization analysis.
+> **Note**: This project is based on the original [imc-prosperity-3-optimizer](https://github.com/jmerle/imc-prosperity-3-optimizer) by [Jasper van Merle (jmerle)](https://github.com/jmerle). The original project provided the foundation for this version.
 
 ## Features
 
