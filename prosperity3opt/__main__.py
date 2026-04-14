@@ -44,7 +44,7 @@ app = Typer(context_settings={"help_option_names": ["--help", "-h"]})
 @app.command()
 def cli(
     algorithm: Annotated[Path, Argument(help="Path to the Python file containing the algorithm to optimize.", show_default=False, exists=True, file_okay=True, dir_okay=False, resolve_path=True)],
-    days: Annotated[list[str], Argument(help="Days to backtest on (e.g., '1-1', '2'). Required for local mode, not used with --live.", show_default=False)] = [],
+    days: Annotated[Optional[list[str]], Argument(help="Days to backtest on (e.g., '1-1', '2'). Required for local mode, not used with --live.", show_default=False)] = None,
     out: Annotated[Path, Option(help="Path to save optimization results to.", show_default=False, dir_okay=False, resolve_path=True)] = Path("prosperity3opt.log"),
     no_out: Annotated[bool, Option("--no-out", help="Skip saving optimization results.")] = False,
     jobs: Annotated[int, Option(help="Number of backtests to run in parallel (-1 to use number of CPU cores).")] = -1,
