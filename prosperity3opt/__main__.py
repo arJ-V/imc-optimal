@@ -44,33 +44,70 @@ app = Typer(context_settings={"help_option_names": ["--help", "-h"]})
 @app.command()
 def cli(
     algorithm: Annotated[Path, Argument(help="Path to the Python file containing the algorithm to optimize.", show_default=False, exists=True, file_okay=True, dir_okay=False, resolve_path=True)],
-    days: Annotated[list[str], Argument(help="The days to backtest on. <round>-<day> for a single day, <round> for all days in a round.", show_default=False)],
+    days: Annotated[list[str], Argument(help="Days to backtest on (e.g., '1-1', '2'). Required for local mode, not used with --live.", show_default=False)] = [],
     out: Annotated[Path, Option(help="Path to save optimization results to.", show_default=False, dir_okay=False, resolve_path=True)] = Path("prosperity3opt.log"),
     no_out: Annotated[bool, Option("--no-out", help="Skip saving optimization results.")] = False,
     jobs: Annotated[int, Option(help="Number of backtests to run in parallel (-1 to use number of CPU cores).")] = -1,
     minimize: Annotated[bool, Option("--min", help="Minimize the total profit rather than maximizing it.")] = False,
-    trials: Annotated[Optional[int], Option(help="Maximum number of trials to run. Defaults: 65 for multi-objective, 40 for PnL-only.", show_default=False)] = None,
+    trials: Annotated[Optional[int], Option(help="Maximum number of trials to run. Defaults: 65 multi-obj, 40 pnl-only, 10 live.", show_default=False)] = None,
     seconds: Annotated[Optional[int], Option(help="Maximum number of seconds to run for (defaults to infinity).", show_default=False)] = None,
     grid: Annotated[bool, Option("--grid", help="Perform a grid search. Requires all floating point parameters to have a step size.")] = False,
     pnl_only: Annotated[bool, Option("--pnl-only", help="Optimize PnL only using TPE (single-objective mode). Default is multi-objective with NSGA-II.")] = False,
     match_trades: Annotated[TradeMatchingMode, Option(help="How to match orders against market trades. 'all' matches trades with prices equal to or worse than your quotes, 'worse' matches trades with prices worse than your quotes, 'none' does not match trades against orders at all.")] = TradeMatchingMode.all,
+    live: Annotated[bool, Option("--live", help="Submit to the real IMC Prosperity platform instead of local backtesting. Requires imc-prospector (pip install imc-prospector).")] = False,
+    live_delay: Annotated[int, Option("--live-delay", help="Minimum seconds between live submissions to avoid rate limiting.")] = 10,
+    live_timeout: Annotated[int, Option("--live-timeout", help="Maximum seconds to wait for each live submission to complete.")] = 300,
     version: Annotated[bool, Option("--version", "-v", help="Show the program's version number and exit.", is_eager=True, callback=version_callback)] = False,
 ) -> None:  # fmt: skip
     """
     Optimize an IMC Prosperity 3 algorithm using Optuna and prosperity3bt.
-    
+
     By default, uses multi-objective optimization (NSGA-II) optimizing for PnL, Sharpe ratio, and drawdown.
     Use --pnl-only to optimize only PnL using TPE (single-objective mode).
+    Use --live to submit algorithms to the real IMC platform instead of local backtesting.
     """
     if out is not None and no_out:
         print("Error: --out and --no-out are mutually exclusive")
         sys.exit(1)
 
+    if live:
+        if not days:
+            days = []
+        if jobs != 1:
+            print("Note: --live mode requires sequential submissions, using --jobs 1")
+            jobs = 1
+        if not pnl_only and not grid:
+            print(
+                "Note: --live mode defaults to --pnl-only since Sharpe/drawdown from "
+                "the platform are derived from per-product PnL, not per-day."
+            )
+            pnl_only = True
+        print(
+            "=== LIVE SUBMISSION MODE ===\n"
+            "Algorithms will be submitted to the real IMC Prosperity platform.\n"
+            "Ensure your Prosperity ID token is configured (imc-prospector will prompt if needed).\n"
+            f"Delay between submissions: {live_delay}s | Timeout per submission: {live_timeout}s"
+        )
+    else:
+        if not days:
+            print("Error: at least one day argument is required for local backtest mode")
+            print("Usage: prosperity3opt <algorithm.py> <days...> [OPTIONS]")
+            sys.exit(1)
+
     backtester_args = ["--match-trades", match_trades.value]
     multi_objective = not pnl_only
 
     with temporary_directory() as temp_dir:
-        runner = ObjectiveRunner(temp_dir, algorithm, days, backtester_args, multi_objective=multi_objective)
+        runner = ObjectiveRunner(
+            temp_dir,
+            algorithm,
+            days,
+            backtester_args,
+            multi_objective=multi_objective,
+            use_live=live,
+            live_delay=live_delay,
+            live_timeout=live_timeout,
+        )
 
         if len(runner.params) == 0:
             print("Error: no hyperparameters found")
@@ -92,22 +129,26 @@ def cli(
                 num_combinations *= len(v)
 
             print(f"Running grid search on {num_combinations:,.0f} possible hyperparameter combinations")
+            if live:
+                est_time = num_combinations * (live_delay + 60)
+                print(f"Estimated minimum time for live grid search: ~{est_time // 60} minutes")
         elif multi_objective:
             sampler = NSGAIISampler()
             if trials is None:
-                trials = 65  # Default for multi-objective (midpoint of 50-80 range)
+                trials = 65
             print("Using multi-objective optimization (NSGA-II): optimizing PnL, Sharpe ratio, and drawdown")
         else:
             sampler = TPESampler()
             if trials is None:
-                trials = 40  # Default for single-objective (midpoint of 30-50 range)
-            print("Using single-objective optimization (TPE): optimizing PnL only")
+                trials = 10 if live else 40
+            mode_label = "live platform" if live else "local backtester"
+            print(f"Using single-objective optimization (TPE) via {mode_label}: optimizing PnL only")
 
         if multi_objective:
             study = optuna.create_study(
                 storage=storage,
                 sampler=sampler,
-                directions=["maximize", "maximize", "minimize"],  # Maximize PnL, maximize Sharpe, minimize drawdown
+                directions=["maximize", "maximize", "minimize"],
                 study_name=datetime.now().strftime("prosperity3opt_%Y-%m-%d_%H-%M-%S"),
             )
         else:

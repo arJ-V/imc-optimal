@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from multiprocessing import Lock
 from pathlib import Path
@@ -27,25 +28,55 @@ def temporary_directory() -> Generator[Path, None, None]:
 
 
 class ObjectiveRunner:
-    def __init__(self, temp_dir: Path, algorithm_file: Path, days: list[str], backtester_args: list[str], multi_objective: bool = True) -> None:
+    def __init__(
+        self,
+        temp_dir: Path,
+        algorithm_file: Path,
+        days: list[str],
+        backtester_args: list[str],
+        multi_objective: bool = True,
+        use_live: bool = False,
+        live_delay: int = 10,
+        live_timeout: int = 300,
+    ) -> None:
         self._temp_dir = temp_dir
         self._days = days
         self._backtester_args = backtester_args
         self._multi_objective = multi_objective
+        self._use_live = use_live
+        self._live_delay = live_delay
+        self._live_timeout = live_timeout
 
         self.params = dict[str, Callable[[Trial], CategoricalChoiceType]]()
         self.param_definitions = dict[str, str]()
+        self._original_lines: list[str] = []
+        self._original_algorithm_name = algorithm_file.name
 
         self._algorithm_file = self._process_algorithm_file(algorithm_file)
+
+        if use_live:
+            from prosperity3opt.submission import check_prospector_available, get_round_id
+
+            check_prospector_available()
+            self._round_id = get_round_id()
+            self._submission_dir = temp_dir / "submissions"
+            self._submission_dir.mkdir(exist_ok=True)
+            self._last_submission_time = 0.0
 
         self._params_seen = set[str]()
         self._params_seen_lock = Lock()
 
     def _process_algorithm_file(self, algorithm_file: Path) -> Path:
-        shutil.copyfile(algorithm_file.parent / "datamodel.py", self._temp_dir / "datamodel.py")
+        datamodel_path = algorithm_file.parent / "datamodel.py"
+        if datamodel_path.exists():
+            shutil.copyfile(datamodel_path, self._temp_dir / "datamodel.py")
+
+        with algorithm_file.open("r", encoding="utf-8") as f:
+            self._original_lines = f.readlines()
+
         output_file = self._temp_dir / "algorithm.py"
 
-        with algorithm_file.open("r", encoding="utf-8") as fin, output_file.open("w+", encoding="utf-8") as fout:
+        with output_file.open("w+", encoding="utf-8") as fout:
             fout.write(
                 """
 import json as prosperity3opt_json
@@ -57,7 +88,7 @@ prosperity3opt_params = prosperity3opt_json.loads(prosperity3opt_os.environ["PRO
 
             pattern = re.compile(r"^\s*([^ ]+)\s*=\s*(.*?)\s*#\s*opt:\s*((categorical|float|int).*)\s*$")
 
-            for i, line in enumerate(fin):
+            for line in self._original_lines:
                 fout.write(pattern.sub(self._process_opt_match, line))
 
         return output_file
@@ -92,7 +123,7 @@ prosperity3opt_params = prosperity3opt_json.loads(prosperity3opt_os.environ["PRO
         return f"{var_name}{suffix}"
 
     def _run_backtest(self, params: str) -> BacktestMetrics:
-        """Run a single backtest and return metrics."""
+        """Run a single local backtest and return metrics."""
         env = os.environ.copy()
         env["PROSPERITY3OPT_PARAMS"] = params
 
@@ -119,30 +150,77 @@ prosperity3opt_params = prosperity3opt_json.loads(prosperity3opt_os.environ["PRO
 
         return parse_backtester_output(stdout)
 
+    def _create_live_algorithm(self, params_dict: dict) -> Path:
+        """Create an algorithm file with hardcoded parameter values for live submission.
+
+        Replaces each `# opt:` annotated line with the trial's suggested value,
+        producing a self-contained file that runs without env-var injection.
+        """
+        output_file = self._temp_dir / self._original_algorithm_name
+        pattern = re.compile(r"^(\s*[^ ]+\s*=\s*)(.*?)(\s*#\s*opt:\s*(categorical|float|int).*)\s*$")
+
+        param_names = list(self.params.keys())
+        param_idx = 0
+
+        with output_file.open("w", encoding="utf-8") as fout:
+            for line in self._original_lines:
+                match = pattern.match(line)
+                if match and param_idx < len(param_names):
+                    prefix = match.group(1)
+                    value = params_dict[param_names[param_idx]]
+                    fout.write(f"{prefix}{repr(value)}\n")
+                    param_idx += 1
+                else:
+                    fout.write(line)
+
+        return output_file
+
+    def _run_live_submission(self, params_dict: dict) -> BacktestMetrics:
+        """Submit algorithm to the real IMC platform and return metrics."""
+        from prosperity3opt.submission import submit_and_evaluate
+
+        elapsed = time.time() - self._last_submission_time
+        if elapsed < self._live_delay:
+            remaining = self._live_delay - elapsed
+            print(f"Rate limiting: waiting {remaining:.0f}s before next submission...")
+            time.sleep(remaining)
+
+        algorithm_file = self._create_live_algorithm(params_dict)
+
+        try:
+            metrics = submit_and_evaluate(
+                algorithm_file,
+                self._submission_dir,
+                self._round_id,
+                timeout=self._live_timeout,
+            )
+        finally:
+            self._last_submission_time = time.time()
+
+        return metrics
+
     def objective(self, trial: Trial) -> float | Tuple[float, float, float]:
         """Objective function for optimization.
-        
+
         Returns:
             - For single-objective: float (PnL)
-            - For multi-objective: tuple of (PnL, -Sharpe, max_drawdown)
-              (Sharpe is negated because Optuna maximizes, and we want to maximize Sharpe)
+            - For multi-objective: tuple of (PnL, Sharpe, max_drawdown)
         """
-        params = json.dumps(
-            {name: eval(value, {"trial": trial}, {}) for name, value in self.params.items()}, sort_keys=True
-        )
+        params_dict = {name: eval(value, {"trial": trial}, {}) for name, value in self.params.items()}
+        params_json = json.dumps(params_dict, sort_keys=True)
 
         with self._params_seen_lock:
-            if params in self._params_seen:
+            if params_json in self._params_seen:
                 raise TrialPruned("Same parameters as previous trial.")
 
-            self._params_seen.add(params)
+            self._params_seen.add(params_json)
 
-        metrics = self._run_backtest(params)
+        if self._use_live:
+            metrics = self._run_live_submission(params_dict)
+        else:
+            metrics = self._run_backtest(params_json)
 
         if self._multi_objective:
-            # Multi-objective: return (PnL, Sharpe, max_drawdown)
-            # Directions in study: ["maximize", "maximize", "minimize"]
             return (metrics.total_pnl, metrics.sharpe_ratio, metrics.max_drawdown)
         else:
-            # Single-objective: return PnL only
             return float(metrics.total_pnl)

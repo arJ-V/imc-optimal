@@ -26,6 +26,9 @@ dependencies = [
     "pandas>=2.0.0",
 ]
 
+[project.optional-dependencies]
+live = ["imc-prospector>=0.2.0"]
+
 [build-system]
 requires = ["setuptools >= 61.0"]
 build-backend = "setuptools.build_meta"
