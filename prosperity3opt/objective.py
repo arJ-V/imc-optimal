@@ -9,7 +9,7 @@ import time
 from contextlib import contextmanager
 from multiprocessing import Lock
 from pathlib import Path
-from typing import Callable, Generator, Tuple
+from typing import Callable, Generator, Tuple, Union
 
 from optuna import Trial, TrialPruned
 from optuna.distributions import CategoricalChoiceType
@@ -199,7 +199,7 @@ prosperity3opt_params = prosperity3opt_json.loads(prosperity3opt_os.environ["PRO
 
         return metrics
 
-    def objective(self, trial: Trial) -> float | Tuple[float, float, float]:
+    def objective(self, trial: Trial) -> Union[float, Tuple[float, float, float]]:
         """Objective function for optimization.
 
         Returns:
