@@ -15,7 +15,7 @@ import optuna
 from optuna.samplers import BaseSampler, GridSampler, NSGAIISampler, TPESampler
 from optuna.storages import BaseStorage, InMemoryStorage, JournalStorage
 from optuna.storages.journal import JournalFileBackend
-from prosperity3bt.models import TradeMatchingMode
+from prosperity4bt.models import TradeMatchingMode
 from typer import Argument, Option, Typer
 
 from prosperity3opt.grid import get_grid_search_space

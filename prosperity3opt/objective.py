@@ -131,7 +131,7 @@ prosperity3opt_params = prosperity3opt_json.loads(prosperity3opt_os.environ["PRO
             [
                 sys.executable,
                 "-m",
-                "prosperity3bt",
+                "prosperity4bt",
                 str(self._algorithm_file),
                 *self._days,
                 *self._backtester_args,

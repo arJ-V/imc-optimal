@@ -20,7 +20,7 @@ dependencies = [
     "gunicorn>=23.0.0",
     "numpy>=2.0.2",
     "typer>=0.15.2",
-    "prosperity3bt>=0.11.0",
+    "prosperity4btest",
     "tqdm>=4.67.1",
     "matplotlib>=3.7.0",
     "pandas>=2.0.0",
