@@ -1,7 +1,7 @@
 [project]
 name = "prosperity3opt"
 description = "Hyperparameter optimizer for IMC Prosperity 3 algorithms with multi-objective optimization. Based on the original optimizer by jmerle."
-version = "0.1.0"
+version = "0.2.0"
 readme = "README.md"
 license = {file = "LICENSE"}
 authors = [{name = "arJ-V"}]

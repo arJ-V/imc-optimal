@@ -4,4 +4,4 @@ This package is based on the original imc-prosperity-3-optimizer by jmerle (Jasp
 Original project: https://github.com/jmerle/imc-prosperity-3-optimizer
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
