@@ -10,6 +10,7 @@ Hyperparameter optimizer for [IMC Prosperity 3](https://prosperity.imc.com/) alg
 
 - **Multi-objective optimization (default)**: Uses NSGA-II to optimize PnL, Sharpe ratio, and drawdown simultaneously
 - **Single-objective mode**: Optional PnL-only optimization using TPE
+- **Live submission mode**: Submit to the real IMC Prosperity platform via [imc-prospector](https://github.com/arJ-V/imc-prospector) to evaluate against the actual matching engine
 - **Post-optimization analysis**: Sensitivity analysis, knife-edge detection, and visualizations
 - **Overfitting protection**: Default trial limits (50-80 for multi-objective, 30-50 for single-objective)
 
@@ -17,6 +18,14 @@ Hyperparameter optimizer for [IMC Prosperity 3](https://prosperity.imc.com/) alg
 
 ```bash
 pip install prosperity3opt
+```
+
+To enable live submission mode (submitting to the real IMC platform):
+
+```bash
+pip install prosperity3opt[live]
+# or separately:
+pip install imc-prospector
 ```
 
 ## Usage
@@ -50,13 +59,43 @@ prosperity3opt algorithm.py 1-0 1--1
 prosperity3opt algorithm.py 1 --pnl-only
 ```
 
+### Live Submission Mode
+
+Use `--live` to optimize against the real IMC Prosperity matching engine instead of the local backtester. This is useful when the local backtester's matching engine doesn't perfectly replicate the real platform behavior.
+
+```bash
+# Optimize using real platform submissions
+prosperity3opt algorithm.py --live
+
+# Customize rate limiting and timeout
+prosperity3opt algorithm.py --live --live-delay 15 --live-timeout 600
+
+# More trials on the real platform
+prosperity3opt algorithm.py --live --trials 20
+```
+
+Live mode automatically:
+- Forces sequential submissions (`--jobs 1`)
+- Defaults to PnL-only optimization (`--pnl-only`)
+- Uses 10 trials by default (each submission takes time on the platform)
+
+**Prerequisites**: Your Prosperity ID token must be configured. Run `imc-prospector submit` once to set it up, or the optimizer will prompt you on first use. See the [imc-prospector README](https://github.com/arJ-V/imc-prospector#first-time-setup) for details on getting your token.
+
 ### Options
 
-- `--pnl-only`: Use single-objective optimization (TPE) instead of multi-objective (NSGA-II)
-- `--trials N`: Maximum number of trials (default: 65 for multi-objective, 40 for single-objective)
-- `--out PATH`: Path to save optimization results (default: `prosperity3opt.log`)
-- `--grid`: Use grid search instead of TPE/NSGA-II
-- `--jobs N`: Number of parallel backtests (default: -1, uses all CPU cores)
+| Option | Description |
+|--------|-------------|
+| `--pnl-only` | Use single-objective optimization (TPE) instead of multi-objective (NSGA-II) |
+| `--trials N` | Maximum number of trials (default: 65 multi-obj, 40 pnl-only, 10 live) |
+| `--out PATH` | Path to save optimization results (default: `prosperity3opt.log`) |
+| `--no-out` | Skip saving optimization results |
+| `--grid` | Use grid search instead of TPE/NSGA-II |
+| `--jobs N` | Number of parallel backtests (default: -1, uses all CPU cores) |
+| `--min` | Minimize total profit instead of maximizing |
+| `--match-trades` | How to match orders against market trades (`all`, `worse`, `none`) |
+| `--live` | Submit to the real IMC Prosperity platform instead of local backtesting |
+| `--live-delay N` | Minimum seconds between live submissions (default: 10) |
+| `--live-timeout N` | Maximum seconds to wait per live submission (default: 300) |
 
 Run `prosperity3opt --help` for all available options.
 
@@ -71,11 +110,21 @@ The default mode uses NSGA-II to optimize three objectives simultaneously:
 
 This returns a Pareto front of solutions, allowing you to choose the highest PnL candidate with acceptable Sharpe ratio and drawdown.
 
+### Local vs. Live Evaluation
+
+The optimizer supports two evaluation backends:
+
+- **Local** (default): Runs backtests via `prosperity3bt`. Fast, parallel, supports all objectives. Best for exploring the parameter space.
+- **Live** (`--live`): Submits to the real IMC Prosperity platform via `imc-prospector`. Slower but uses the actual matching engine, which can differ from the local backtester. Best for validating top candidates or when local matching accuracy matters.
+
+A recommended workflow is to optimize locally first, then re-run the top parameter sets with `--live` to validate against the real platform.
+
 ### Trial Limits
 
 To prevent overfitting on limited backtest data:
 - Multi-objective: 50-80 trials (default: 65)
 - Single-objective: 30-50 trials (default: 40)
+- Live mode: 10 trials (default, since each submission is slower)
 
 ### Post-Optimization Analysis
 
@@ -89,11 +138,11 @@ After optimization, the tool provides:
 
 The optimizer:
 1. Scans your algorithm file for `# opt:` annotations
-2. Runs backtests using the `prosperity3bt` module with different parameter combinations
+2. Runs backtests using `prosperity3bt` (local mode) or submits to the real IMC platform (live mode) with different parameter combinations
 3. Optimizes parameters using Optuna (NSGA-II for multi-objective, TPE for single-objective)
 4. Returns a Pareto front (multi-objective) or best solution (single-objective)
 
-**Note**: The optimizer uses the `prosperity3bt` module to access historical data and run backtests. You don't need to upload day-specific code - the backtester handles data access automatically.
+In **live mode**, the optimizer creates a self-contained algorithm file for each trial with the parameter values hardcoded directly into the source, then submits it via `imc-prospector` and extracts PnL from the platform's results.
 
 ## Visualization
 
@@ -106,6 +155,8 @@ optuna-dashboard prosperity3opt.log
 ## Credits
 
 This project is based on the original [imc-prosperity-3-optimizer](https://github.com/jmerle/imc-prosperity-3-optimizer) by [Jasper van Merle (jmerle)](https://github.com/jmerle). The original project provided the core optimizer functionality.
+
+Live submission support is powered by [imc-prospector](https://github.com/arJ-V/imc-prospector).
 
 ## License
 
