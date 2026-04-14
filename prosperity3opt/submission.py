@@ -91,15 +91,28 @@ def _monitor_submission(
 def _parse_submission_results(output_file: Path) -> BacktestMetrics:
     """Parse submission graph JSON into BacktestMetrics.
 
-    The graph JSON contains a 'profitLoss' field that is either a dict
-    (per-product breakdown) or a scalar (total PnL).
+    The graph data is a JSON array of {timestamp, value} objects representing
+    the cumulative PnL curve over time. The final entry's value is total PnL.
     """
     graph_data = json.loads(output_file.read_text(encoding="utf-8"))
 
     total_pnl = 0
     day_profits: list[int] = []
 
-    if isinstance(graph_data, dict) and "profitLoss" in graph_data:
+    if isinstance(graph_data, list) and len(graph_data) > 0:
+        # Time series: [{timestamp, value}, ...] — cumulative PnL curve
+        # Extract incremental profits between points for Sharpe/drawdown
+        values = [point["value"] for point in graph_data if "value" in point]
+        if values:
+            total_pnl = int(values[-1])
+            # Chunk into ~equal segments to approximate per-day profits
+            chunk_size = max(1, len(values) // 5)
+            for i in range(0, len(values), chunk_size):
+                chunk = values[i : i + chunk_size]
+                start = values[i - 1] if i > 0 else 0.0
+                day_profits.append(int(chunk[-1] - start))
+
+    elif isinstance(graph_data, dict) and "profitLoss" in graph_data:
         pl_data = graph_data["profitLoss"]
         if isinstance(pl_data, dict):
             day_profits = [int(v) for v in pl_data.values()]
