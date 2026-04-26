@@ -76,19 +76,44 @@ class ObjectiveRunner:
 
         output_file = self._temp_dir / "algorithm.py"
 
+        header = (
+            "import json as prosperity3opt_json\n"
+            "import os as prosperity3opt_os\n"
+            'prosperity3opt_params = prosperity3opt_json.loads(prosperity3opt_os.environ["PROSPERITY3OPT_PARAMS"])\n'
+        )
+
+        # Find insertion point: after any __future__ imports and module docstrings
+        insert_after = 0
+        in_docstring = False
+        docstring_char = None
+        for i, line in enumerate(self._original_lines):
+            stripped = line.strip()
+            if in_docstring:
+                if docstring_char and docstring_char in stripped:
+                    in_docstring = False
+                continue
+            if not stripped or stripped.startswith("#"):
+                continue
+            if stripped.startswith(('"""', "'''")):
+                docstring_char = stripped[:3]
+                if stripped.count(docstring_char) >= 2:
+                    continue
+                in_docstring = True
+                continue
+            if stripped.startswith("from __future__"):
+                insert_after = i + 1
+                continue
+            break
+
+        pattern = re.compile(r"^\s*([^ ]+)\s*=\s*(.*?)\s*#\s*opt:\s*((categorical|float|int).*)\s*$")
+
         with output_file.open("w+", encoding="utf-8") as fout:
-            fout.write(
-                """
-import json as prosperity3opt_json
-import os as prosperity3opt_os
-prosperity3opt_params = prosperity3opt_json.loads(prosperity3opt_os.environ["PROSPERITY3OPT_PARAMS"])
-            """.strip()
-            )
-            fout.write("\n\n")
-
-            pattern = re.compile(r"^\s*([^ ]+)\s*=\s*(.*?)\s*#\s*opt:\s*((categorical|float|int).*)\s*$")
-
-            for line in self._original_lines:
+            for line in self._original_lines[:insert_after]:
+                fout.write(line)
+            fout.write("\n")
+            fout.write(header)
+            fout.write("\n")
+            for line in self._original_lines[insert_after:]:
                 fout.write(pattern.sub(self._process_opt_match, line))
 
         return output_file
