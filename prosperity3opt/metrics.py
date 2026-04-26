@@ -26,8 +26,6 @@ class BacktestMetrics:
         if std_return == 0:
             return 0.0
 
-        # Sharpe ratio: mean return / std deviation
-        # Using simple Sharpe without risk-free rate (assumed to be 0)
         return mean_return / std_return
 
     def calculate_max_drawdown(self) -> float:
@@ -43,53 +41,65 @@ class BacktestMetrics:
         if len(drawdown) == 0 or running_max[-1] == 0:
             return 0.0
 
-        # Return as percentage of peak
         max_dd = np.max(drawdown)
         peak = running_max[-1] if running_max[-1] != 0 else 1.0
         return (max_dd / peak) * 100.0
 
 
 def parse_backtester_output(stdout: str) -> BacktestMetrics:
-    """Parse backtester output to extract metrics."""
+    """Parse backtester output to extract metrics.
+
+    Handles both P3 and P4 output formats:
+      P3: "Total profit: N" lines before "Profit summary:"
+      P4: same structure plus "Risk metrics:" section with key-value pairs
+    """
     day_profits = []
     sharpe_ratio: Optional[float] = None
     max_drawdown: Optional[float] = None
+    in_profit_summary = False
+    in_risk_metrics = False
 
     lines = stdout.splitlines()
     for line in lines:
-        # Extract day profits
-        if line.startswith("Total profit: "):
-            profit_str = line.split(": ")[1].replace(",", "")
-            try:
-                day_profits.append(int(profit_str))
-            except ValueError:
-                pass
+        stripped = line.strip()
 
-        # Try to extract Sharpe ratio if present
-        if "sharpe" in line.lower() and sharpe_ratio is None:
-            parts = line.split()
-            for i, part in enumerate(parts):
-                if "sharpe" in part.lower() and i + 1 < len(parts):
+        if stripped == "Profit summary:":
+            in_profit_summary = True
+            continue
+
+        if stripped.startswith("Risk metrics"):
+            in_profit_summary = False
+            in_risk_metrics = True
+            continue
+
+        if not in_profit_summary and not in_risk_metrics:
+            # Before profit summary: collect per-day "Total profit:" lines
+            if stripped.startswith("Total profit:"):
+                profit_str = stripped.split(":")[1].strip().replace(",", "")
+                try:
+                    day_profits.append(int(float(profit_str)))
+                except ValueError:
+                    pass
+
+        if in_risk_metrics:
+            # P4 risk metrics: "  key: value" format
+            if ":" in stripped:
+                key, _, val = stripped.partition(":")
+                key = key.strip().lower()
+                val = val.strip()
+
+                if key == "sharpe_ratio" and val not in ("n/a", ""):
                     try:
-                        sharpe_ratio = float(parts[i + 1])
-                        break
-                    except (ValueError, IndexError):
+                        sharpe_ratio = float(val)
+                    except ValueError:
                         pass
-
-        # Try to extract drawdown if present
-        if ("drawdown" in line.lower() or "dd" in line.lower()) and max_drawdown is None:
-            parts = line.split()
-            for i, part in enumerate(parts):
-                if ("drawdown" in part.lower() or "dd" in part.lower()) and i + 1 < len(parts):
+                elif key == "max_drawdown_abs" and val not in ("n/a", ""):
                     try:
-                        max_drawdown = float(parts[i + 1])
-                        break
-                    except (ValueError, IndexError):
+                        max_drawdown = float(val)
+                    except ValueError:
                         pass
-
-        # Stop parsing after profit summary
-        if line == "Profit summary:":
-            break
+            elif stripped == "":
+                in_risk_metrics = False
 
     total_pnl = sum(day_profits) if day_profits else 0
 
@@ -100,7 +110,6 @@ def parse_backtester_output(stdout: str) -> BacktestMetrics:
         max_drawdown=max_drawdown,
     )
 
-    # Calculate metrics if not provided by backtester
     if metrics.sharpe_ratio is None:
         metrics.sharpe_ratio = metrics.calculate_sharpe_ratio()
 
