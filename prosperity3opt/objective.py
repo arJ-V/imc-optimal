@@ -132,6 +132,7 @@ prosperity3opt_params = prosperity3opt_json.loads(prosperity3opt_os.environ["PRO
                 sys.executable,
                 "-m",
                 "prosperity4bt",
+                "cli",
                 str(self._algorithm_file),
                 *self._days,
                 *self._backtester_args,
@@ -146,7 +147,7 @@ prosperity3opt_params = prosperity3opt_json.loads(prosperity3opt_os.environ["PRO
         stdout = proc.stdout.decode("utf-8")
 
         if proc.returncode != 0:
-            raise RuntimeError(f"prosperity3bt exited with status code {proc.returncode}. Output:\n{stdout}")
+            raise RuntimeError(f"prosperity4bt exited with status code {proc.returncode}. Output:\n{stdout}")
 
         return parse_backtester_output(stdout)
 
